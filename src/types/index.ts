@@ -123,3 +123,25 @@ export interface FestivalSaleAnalysis {
     quantity: number;
   }[];
 }
+
+export interface CigaretteOrderItem {
+  productId: string;
+  productName: string;
+  brand: string;
+  orderQuantity: number;
+  receivedQuantity: number | null;
+  unitPrice: number;
+}
+
+export interface CigaretteOrderRecord {
+  id: string;
+  orderNo: string;
+  orderDate: string;
+  receiveDate: string | null;
+  status: 'pending' | 'received';
+  items: CigaretteOrderItem[];
+  totalOrderQuantity: number;
+  totalReceivedQuantity: number | null;
+  totalAmount: number;
+  arrivalRate: number | null;
+}
