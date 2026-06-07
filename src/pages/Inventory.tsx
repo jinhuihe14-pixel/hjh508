@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useData } from '@/context/DataContext';
 import { getStockInfoList } from '@/utils/analytics';
-import type { Category } from '@/types';
+import type { Category, CustomerType } from '@/types';
 
 export default function Inventory() {
   const { products, saleOrders, purchaseOrders, allOrders } = useData();
@@ -19,6 +19,16 @@ export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<Category | 'all'>('all');
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+
+  const [inSearchTerm, setInSearchTerm] = useState('');
+  const [inCategoryFilter, setInCategoryFilter] = useState<Category | 'all'>('all');
+  const [showInCategoryDropdown, setShowInCategoryDropdown] = useState(false);
+
+  const [outSearchTerm, setOutSearchTerm] = useState('');
+  const [outCategoryFilter, setOutCategoryFilter] = useState<Category | 'all'>('all');
+  const [outOrderTypeFilter, setOutOrderTypeFilter] = useState<CustomerType | 'all'>('all');
+  const [showOutCategoryDropdown, setShowOutCategoryDropdown] = useState(false);
+  const [showOutOrderTypeDropdown, setShowOutOrderTypeDropdown] = useState(false);
 
   const stockInfo = useMemo(() => {
     return getStockInfoList(saleOrders, purchaseOrders, '2026-06-06');
@@ -39,12 +49,39 @@ export default function Inventory() {
       .slice(0, 50);
   }, [purchaseOrders]);
 
+  const filteredInOrders = useMemo(() => {
+    return inOrders.filter(order => {
+      const matchSearch = inSearchTerm === '' || order.items.some(
+        item => item.productName.toLowerCase().includes(inSearchTerm.toLowerCase())
+      );
+      const matchCategory = inCategoryFilter === 'all' || order.items.some(item => {
+        const product = products.find(p => p.id === item.productId);
+        return product?.category === inCategoryFilter;
+      });
+      return matchSearch && matchCategory;
+    });
+  }, [inOrders, inSearchTerm, inCategoryFilter, products]);
+
   const outOrders = useMemo(() => {
     return saleOrders
       .filter(o => o.type === 'out')
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 50);
   }, [saleOrders]);
+
+  const filteredOutOrders = useMemo(() => {
+    return outOrders.filter(order => {
+      const matchSearch = outSearchTerm === '' || order.items.some(
+        item => item.productName.toLowerCase().includes(outSearchTerm.toLowerCase())
+      );
+      const matchCategory = outCategoryFilter === 'all' || order.items.some(item => {
+        const product = products.find(p => p.id === item.productId);
+        return product?.category === outCategoryFilter;
+      });
+      const matchOrderType = outOrderTypeFilter === 'all' || order.customerType === outOrderTypeFilter;
+      return matchSearch && matchCategory && matchOrderType;
+    });
+  }, [outOrders, outSearchTerm, outCategoryFilter, outOrderTypeFilter, products]);
 
   const stockSummary = useMemo(() => {
     const categories: Category[] = ['白酒', '啤酒', '香烟', '饮料'];
@@ -139,6 +176,13 @@ export default function Inventory() {
   }, [stockSummary]);
 
   const categories: (Category | 'all')[] = ['all', '白酒', '啤酒', '香烟', '饮料'];
+  const orderTypes: (CustomerType | 'all')[] = ['all', 'retail', 'bulk', 'wedding'];
+  const orderTypeLabels: Record<CustomerType | 'all', string> = {
+    all: '全部类型',
+    retail: '零售',
+    bulk: '团购',
+    wedding: '婚宴',
+  };
 
   const getStockStatus = (productId: string, currentStock: number) => {
     const product = products.find(p => p.id === productId);
@@ -279,9 +323,51 @@ export default function Inventory() {
 
       {activeTab === 'in' && (
         <div className="card">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">入库记录</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">入库记录</h3>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="搜索商品..."
+                  value={inSearchTerm}
+                  onChange={(e) => setInSearchTerm(e.target.value)}
+                  className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent w-60"
+                />
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setShowInCategoryDropdown(!showInCategoryDropdown)}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                >
+                  <Filter size={16} />
+                  {inCategoryFilter === 'all' ? '全部分类' : inCategoryFilter}
+                  <ChevronDown size={16} />
+                </button>
+                {showInCategoryDropdown && (
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[120px]">
+                    {categories.map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => {
+                          setInCategoryFilter(cat);
+                          setShowInCategoryDropdown(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${
+                          inCategoryFilter === cat ? 'text-primary-600 bg-primary-50' : 'text-gray-600'
+                        }`}
+                      >
+                        {cat === 'all' ? '全部分类' : cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="space-y-3">
-            {inOrders.map((order) => (
+            {filteredInOrders.map((order) => (
               <div key={order.id} className="p-4 bg-gray-50 rounded-lg">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
@@ -312,9 +398,79 @@ export default function Inventory() {
 
       {activeTab === 'out' && (
         <div className="card">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">出库记录</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">出库记录</h3>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="搜索商品..."
+                  value={outSearchTerm}
+                  onChange={(e) => setOutSearchTerm(e.target.value)}
+                  className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent w-60"
+                />
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setShowOutCategoryDropdown(!showOutCategoryDropdown)}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                >
+                  <Filter size={16} />
+                  {outCategoryFilter === 'all' ? '全部分类' : outCategoryFilter}
+                  <ChevronDown size={16} />
+                </button>
+                {showOutCategoryDropdown && (
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[120px]">
+                    {categories.map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => {
+                          setOutCategoryFilter(cat);
+                          setShowOutCategoryDropdown(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${
+                          outCategoryFilter === cat ? 'text-primary-600 bg-primary-50' : 'text-gray-600'
+                        }`}
+                      >
+                        {cat === 'all' ? '全部分类' : cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setShowOutOrderTypeDropdown(!showOutOrderTypeDropdown)}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                >
+                  <Filter size={16} />
+                  {orderTypeLabels[outOrderTypeFilter]}
+                  <ChevronDown size={16} />
+                </button>
+                {showOutOrderTypeDropdown && (
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[120px]">
+                    {orderTypes.map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => {
+                          setOutOrderTypeFilter(type);
+                          setShowOutOrderTypeDropdown(false);
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${
+                          outOrderTypeFilter === type ? 'text-primary-600 bg-primary-50' : 'text-gray-600'
+                        }`}
+                      >
+                        {orderTypeLabels[type]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="space-y-3">
-            {outOrders.map((order) => {
+            {filteredOutOrders.map((order) => {
               const typeLabel = {
                 retail: '零售',
                 wedding: '婚宴',
