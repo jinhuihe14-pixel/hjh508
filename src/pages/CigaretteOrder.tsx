@@ -35,8 +35,8 @@ export default function CigaretteOrder() {
   const [receiveQuantities, setReceiveQuantities] = useState<Record<string, number>>({});
 
   const orderDemand = useMemo(() => {
-    return getCigaretteOrderDemand(saleOrders, purchaseOrders);
-  }, [saleOrders, purchaseOrders]);
+    return getCigaretteOrderDemand(saleOrders, purchaseOrders, cigaretteOrders);
+  }, [saleOrders, purchaseOrders, cigaretteOrders]);
 
   const cigaretteProducts = useMemo(() => {
     return products.filter(p => p.category === '香烟');
@@ -136,8 +136,10 @@ export default function CigaretteOrder() {
   };
 
   const handleCreateOrder = () => {
+    if (!canCreateOrder) return;
+
     const items: CigaretteOrderItem[] = cigaretteProducts
-      .filter(p => (orderQuantities[p.id] || 0) > 0)
+      .filter(p => (orderQuantities[p.id] || 0) > 0 && (orderQuantities[p.id] || 0) <= MAX_ORDER_QUANTITY)
       .map(p => ({
         productId: p.id,
         productName: p.name,
@@ -148,7 +150,6 @@ export default function CigaretteOrder() {
       }));
 
     if (items.length === 0) {
-      alert('请至少输入一个品种的订货数量');
       return;
     }
 
@@ -187,32 +188,62 @@ export default function CigaretteOrder() {
   };
 
   const handleConfirmReceive = () => {
-    if (!selectedOrder) return;
+    if (!selectedOrder || !canConfirmReceive) return;
 
     const today = dayjs().format('YYYY-MM-DD');
     const receivedItems = selectedOrder.items.map(item => ({
       productId: item.productId,
-      receivedQuantity: receiveQuantities[item.productId] || 0,
-    }));
+      receivedQuantity: Math.min(item.orderQuantity, receiveQuantities[item.productId] || 0),
+    })).filter(item => item.receivedQuantity > 0);
+
+    if (receivedItems.length === 0) {
+      return;
+    }
 
     confirmCigaretteOrderReceived(selectedOrder.id, today, receivedItems);
     setShowReceiveModal(false);
     setSelectedOrder(null);
   };
 
+  const MAX_ORDER_QUANTITY = 500;
+
+  const hasOrderQuantityError = useMemo(() => {
+    return cigaretteProducts.some(p => (orderQuantities[p.id] || 0) > MAX_ORDER_QUANTITY);
+  }, [orderQuantities, cigaretteProducts]);
+
+  const validOrderItemsCount = useMemo(() => {
+    return cigaretteProducts.filter(p => (orderQuantities[p.id] || 0) > 0).length;
+  }, [orderQuantities, cigaretteProducts]);
+
+  const canCreateOrder = useMemo(() => {
+    return validOrderItemsCount > 0 && !hasOrderQuantityError;
+  }, [validOrderItemsCount, hasOrderQuantityError]);
+
   const orderTotalQuantity = useMemo(() => {
-    return Object.values(orderQuantities).reduce((sum, qty) => sum + qty, 0);
+    return Object.values(orderQuantities).reduce((sum, qty) => sum + (qty > 0 ? qty : 0), 0);
   }, [orderQuantities]);
 
   const orderTotalAmount = useMemo(() => {
     return cigaretteProducts.reduce((sum, p) => {
-      return sum + (orderQuantities[p.id] || 0) * p.costPrice;
+      const qty = orderQuantities[p.id] || 0;
+      return sum + (qty > 0 ? qty : 0) * p.costPrice;
     }, 0);
   }, [orderQuantities, cigaretteProducts]);
 
   const receiveTotalQuantity = useMemo(() => {
     return Object.values(receiveQuantities).reduce((sum, qty) => sum + qty, 0);
   }, [receiveQuantities]);
+
+  const hasReceiveQuantityError = useMemo(() => {
+    if (!selectedOrder) return false;
+    return selectedOrder.items.some(item => (receiveQuantities[item.productId] || 0) > item.orderQuantity);
+  }, [receiveQuantities, selectedOrder]);
+
+  const canConfirmReceive = useMemo(() => {
+    if (!selectedOrder) return false;
+    const hasValidQuantity = selectedOrder.items.some(item => (receiveQuantities[item.productId] || 0) > 0);
+    return hasValidQuantity && !hasReceiveQuantityError;
+  }, [receiveQuantities, selectedOrder]);
 
   const getArrivalRateStatus = (rate: number | null | undefined) => {
     if (rate === null || rate === undefined) return { label: '暂无数据', color: 'text-gray-500 bg-gray-100' };
@@ -375,6 +406,7 @@ export default function CigaretteOrder() {
                         <th className="text-left py-3 px-4 text-sm font-medium text-red-700">商品名称</th>
                         <th className="text-left py-3 px-4 text-sm font-medium text-red-700">品牌</th>
                         <th className="text-right py-3 px-4 text-sm font-medium text-red-700">当前库存</th>
+                        <th className="text-right py-3 px-4 text-sm font-medium text-red-700">在途订货</th>
                         <th className="text-right py-3 px-4 text-sm font-medium text-red-700">安全库存</th>
                         <th className="text-right py-3 px-4 text-sm font-medium text-red-700">日均销量</th>
                         <th className="text-right py-3 px-4 text-sm font-medium text-red-700">周需求量</th>
@@ -405,6 +437,9 @@ export default function CigaretteOrder() {
                             <td className="py-3 px-4 text-sm font-medium text-gray-800">{item.productName}</td>
                             <td className="py-3 px-4 text-sm text-gray-500">{item.brand}</td>
                             <td className="py-3 px-4 text-sm text-right font-medium text-red-600">{item.currentStock}</td>
+                            <td className="py-3 px-4 text-sm text-right text-amber-600">
+                              {item.pendingOrderQuantity > 0 ? item.pendingOrderQuantity : '-'}
+                            </td>
                             <td className="py-3 px-4 text-sm text-right text-gray-600">{item.minStock}</td>
                             <td className="py-3 px-4 text-sm text-right text-gray-600">{item.avgDailySale}</td>
                             <td className="py-3 px-4 text-sm text-right text-gray-600">{item.weeklyDemand}</td>
@@ -467,6 +502,7 @@ export default function CigaretteOrder() {
                         <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">商品名称</th>
                         <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">品牌</th>
                         <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">当前库存</th>
+                        <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">在途订货</th>
                         <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">安全库存</th>
                         <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">日均销量</th>
                         <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">周需求量</th>
@@ -496,6 +532,9 @@ export default function CigaretteOrder() {
                             <td className="py-3 px-4 text-sm font-medium text-gray-800">{item.productName}</td>
                             <td className="py-3 px-4 text-sm text-gray-500">{item.brand}</td>
                             <td className="py-3 px-4 text-sm text-right text-gray-600">{item.currentStock}</td>
+                            <td className="py-3 px-4 text-sm text-right text-amber-600">
+                              {item.pendingOrderQuantity > 0 ? item.pendingOrderQuantity : '-'}
+                            </td>
                             <td className="py-3 px-4 text-sm text-right text-gray-600">{item.minStock}</td>
                             <td className="py-3 px-4 text-sm text-right text-gray-600">{item.avgDailySale}</td>
                             <td className="py-3 px-4 text-sm text-right text-gray-600">{item.weeklyDemand}</td>
@@ -772,16 +811,25 @@ export default function CigaretteOrder() {
                           <td className="py-3 px-4 text-sm text-right text-gray-600">{demand?.currentStock || 0}</td>
                           <td className="py-3 px-4 text-sm text-right font-medium text-primary-600">{demand?.suggestedOrder || 0}</td>
                           <td className="py-3 px-4">
-                            <input
-                              type="number"
-                              min="0"
-                              value={orderQuantities[product.id] || 0}
-                              onChange={(e) => setOrderQuantities(prev => ({
-                                ...prev,
-                                [product.id]: Math.max(0, parseInt(e.target.value) || 0),
-                              }))}
-                              className="w-24 px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                            />
+                            <div className="flex flex-col items-end">
+                              <input
+                                type="number"
+                                min="0"
+                                value={orderQuantities[product.id] || 0}
+                                onChange={(e) => setOrderQuantities(prev => ({
+                                  ...prev,
+                                  [product.id]: Math.max(0, parseInt(e.target.value) || 0),
+                                }))}
+                                className={`w-24 px-3 py-1.5 border rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:border-transparent ${
+                                  (orderQuantities[product.id] || 0) > MAX_ORDER_QUANTITY
+                                    ? 'border-red-400 focus:ring-red-500 bg-red-50'
+                                    : 'border-gray-200 focus:ring-primary-500'
+                                }`}
+                              />
+                              {(orderQuantities[product.id] || 0) > MAX_ORDER_QUANTITY && (
+                                <span className="text-xs text-red-500 mt-1">单次订货不超过500条</span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3 px-4 text-sm text-right text-gray-600">¥{product.costPrice}</td>
                           <td className="py-3 px-4">
@@ -811,6 +859,18 @@ export default function CigaretteOrder() {
                   <span className="mx-2">{orderTotalQuantity} 条</span>
                   <span className="text-gray-400">|</span>
                   <span className="mx-2">预估金额 ¥{Math.round(orderTotalAmount).toLocaleString()}</span>
+                  {hasOrderQuantityError && (
+                    <>
+                      <span className="text-gray-400">|</span>
+                      <span className="mx-2 text-red-500">存在超限商品，请检查</span>
+                    </>
+                  )}
+                  {!hasOrderQuantityError && validOrderItemsCount === 0 && (
+                    <>
+                      <span className="text-gray-400">|</span>
+                      <span className="mx-2 text-amber-500">请至少输入一个品种的订货数量</span>
+                    </>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -821,7 +881,12 @@ export default function CigaretteOrder() {
                   </button>
                   <button
                     onClick={handleCreateOrder}
-                    className="px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors"
+                    disabled={!canCreateOrder}
+                    className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      canCreateOrder
+                        ? 'bg-primary-500 hover:bg-primary-600 text-white'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    }`}
                   >
                     确认创建
                   </button>
@@ -866,21 +931,31 @@ export default function CigaretteOrder() {
                     {selectedOrder.items.map((item) => {
                       const received = receiveQuantities[item.productId] || 0;
                       const diff = received - item.orderQuantity;
+                      const isOverLimit = received > item.orderQuantity;
                       return (
                         <tr key={item.productId} className="border-b border-gray-50 hover:bg-gray-50">
                           <td className="py-3 px-4 text-sm font-medium text-gray-800">{item.productName}</td>
                           <td className="py-3 px-4 text-sm text-right text-gray-600">{item.orderQuantity} 条</td>
                           <td className="py-3 px-4">
-                            <input
-                              type="number"
-                              min="0"
-                              value={received}
-                              onChange={(e) => setReceiveQuantities(prev => ({
-                                ...prev,
-                                [item.productId]: Math.max(0, parseInt(e.target.value) || 0),
-                              }))}
-                              className="w-24 px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                            />
+                            <div className="flex flex-col items-end">
+                              <input
+                                type="number"
+                                min="0"
+                                value={received}
+                                onChange={(e) => setReceiveQuantities(prev => ({
+                                  ...prev,
+                                  [item.productId]: Math.max(0, parseInt(e.target.value) || 0),
+                                }))}
+                                className={`w-24 px-3 py-1.5 border rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:border-transparent ${
+                                  isOverLimit
+                                    ? 'border-red-400 focus:ring-red-500 bg-red-50'
+                                    : 'border-gray-200 focus:ring-primary-500'
+                                }`}
+                              />
+                              {isOverLimit && (
+                                <span className="text-xs text-red-500 mt-1">到货数量不能超过订货数量</span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3 px-4 text-sm text-right">
                             <span className={diff < 0 ? 'text-red-600' : diff > 0 ? 'text-green-600' : 'text-gray-400'}>
@@ -919,6 +994,12 @@ export default function CigaretteOrder() {
                         : 0}%
                     </span>
                   </span>
+                  {hasReceiveQuantityError && (
+                    <>
+                      <span className="text-gray-400">|</span>
+                      <span className="mx-2 text-red-500">到货数量不能超过订货数量</span>
+                    </>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -932,7 +1013,12 @@ export default function CigaretteOrder() {
                   </button>
                   <button
                     onClick={handleConfirmReceive}
-                    className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
+                    disabled={!canConfirmReceive}
+                    className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      canConfirmReceive
+                        ? 'bg-green-500 hover:bg-green-600 text-white'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    }`}
                   >
                     确认到货
                   </button>

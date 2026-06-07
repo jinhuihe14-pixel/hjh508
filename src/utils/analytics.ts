@@ -356,7 +356,7 @@ export function getMonthlySales(saleOrders: Order[], year: number) {
   }));
 }
 
-export function getCigaretteOrderDemand(saleOrders: Order[], purchaseOrders: Order[]) {
+export function getCigaretteOrderDemand(saleOrders: Order[], purchaseOrders: Order[], cigaretteOrders?: { status: string; items: { productId: string; orderQuantity: number; receivedQuantity: number | null }[] }[]) {
   const today = dayjs();
   const lastMonday = today.day() === 1 ? today : today.day(today.day() === 0 ? -6 : 1 - today.day());
   const nextMonday = lastMonday.add(7, 'day');
@@ -388,11 +388,24 @@ export function getCigaretteOrderDemand(saleOrders: Order[], purchaseOrders: Ord
     }
   });
 
+  const pendingOrderQty = new Map<string, number>();
+  if (cigaretteOrders) {
+    cigaretteOrders.forEach(order => {
+      if (order.status === 'pending') {
+        order.items.forEach(item => {
+          const existing = pendingOrderQty.get(item.productId) || 0;
+          pendingOrderQty.set(item.productId, existing + item.orderQuantity);
+        });
+      }
+    });
+  }
+
   return cigarettes.map(product => {
     const currentStock = stockMap.get(product.id) || 0;
     const avgDailySale = (thirtyDaySales.get(product.id) || 0) / 30;
     const weeklyDemand = Math.ceil(avgDailySale * 7);
-    const suggestedOrder = Math.max(0, product.maxStock - currentStock - weeklyDemand + weeklyDemand * 2);
+    const pendingQty = pendingOrderQty.get(product.id) || 0;
+    const suggestedOrder = Math.max(0, product.maxStock - currentStock - pendingQty - weeklyDemand + weeklyDemand * 2);
     const daysUntilOrder = nextMonday.diff(today, 'day');
     
     return {
@@ -405,9 +418,10 @@ export function getCigaretteOrderDemand(saleOrders: Order[], purchaseOrders: Ord
       minStock: product.minStock,
       maxStock: product.maxStock,
       suggestedOrder: Math.max(0, Math.ceil(suggestedOrder / 5) * 5),
+      pendingOrderQuantity: pendingQty,
       daysUntilNextOrder: daysUntilOrder,
       nextOrderDate: nextMonday.format('YYYY-MM-DD'),
-      isUrgent: currentStock <= product.minStock,
+      isUrgent: currentStock + pendingQty <= product.minStock,
     };
   });
 }
